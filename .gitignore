@@ -1,0 +1,5 @@
+shots/
+__pycache__/
+*.py
+balance*.json
+autorun.js
