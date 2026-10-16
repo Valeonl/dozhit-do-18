@@ -201,6 +201,32 @@ body{
 .lamp.off .shade{background:linear-gradient(180deg,#c2cddb,#a2b0c1)}
 .lamp.off .shade::after{background:linear-gradient(180deg,rgba(255,255,255,.5),rgba(255,255,255,0))}
 .lamp.off .bulb{background:#c6d0dc;box-shadow:none}
+/* пелена перегрева: в шапке обзор хуже */
+.heatmask{position:absolute;inset:0;z-index:7;pointer-events:none;opacity:0;transition:opacity .7s;
+  background:radial-gradient(118% 92% at 50% 42%, rgba(255,150,90,0) 34%, rgba(255,124,58,.30) 76%, rgba(206,66,30,.58) 100%);}
+.scene.hatted .heatmask{opacity:1}
+.scene.hatted .desk,.scene.hatted .radwrap,.scene.hatted .heater,.scene.hatted .lamp,
+.scene.hatted .wallclock,.scene.hatted .poster,.scene.hatted .picture,.scene.hatted .plant,
+.scene.hatted .colleague,.scene.hatted .visitor,.scene.hatted .socket{filter:blur(.9px) saturate(1.08)}
+.scene.dizzy .heatmask{opacity:1;animation:wobble 4.4s ease-in-out infinite}
+.scene.dizzy .desk,.scene.dizzy .radwrap,.scene.dizzy .heater,.scene.dizzy .lamp,
+.scene.dizzy .wallclock,.scene.dizzy .poster,.scene.dizzy .picture,.scene.dizzy .colleague{filter:blur(1.5px) saturate(1.12)}
+@keyframes wobble{
+  0%,100%{transform:translate(0,0) rotate(0)}
+  25%{transform:translate(3px,-2px) rotate(.35deg)}
+  50%{transform:translate(-2px,2px) rotate(-.3deg)}
+  75%{transform:translate(2px,1px) rotate(.2deg)}
+}
+/* шапка на герое */
+.player .hat{position:absolute;left:50%;top:6px;width:52px;height:34px;transform:translateX(-50%) translateY(-14px) scaleY(.55);
+  transform-origin:50% 100%;opacity:0;transition:opacity .25s,transform .35s cubic-bezier(.3,1.4,.5,1);pointer-events:none}
+.player .hat::before{content:'';position:absolute;left:2px;right:2px;top:0;bottom:7px;
+  border-radius:52% 52% 16% 16% / 88% 88% 22% 22%;
+  background:linear-gradient(180deg,#e8836d,#c9523f 62%,#b04534);
+  box-shadow:inset -6px -4px 0 rgba(0,0,0,.10), inset 6px 3px 0 rgba(255,255,255,.14);}
+.player .hat::after{content:'';position:absolute;left:1px;right:1px;bottom:0;height:10px;border-radius:7px;
+  background:linear-gradient(180deg,#f0927c,#cb5a46);box-shadow:0 2px 5px rgba(90,40,30,.32)}
+.player.wearing .hat{opacity:1;transform:translateX(-50%) translateY(0) scaleY(1)}
 .darkmask{position:absolute;inset:0;z-index:8;pointer-events:none;opacity:0;transition:opacity .8s;
   background:radial-gradient(120% 90% at 50% 0%, rgba(10,18,34,.42), rgba(8,14,28,.72))}
 .scene.dark .darkmask{opacity:1}
@@ -789,7 +815,7 @@ body{
       <div class="top"></div>
     </div>
 
-    <div class="player" id="player"><span class="face" id="playerFace">🙂</span><span class="say" id="speech"></span></div>
+    <div class="player" id="player"><span class="face" id="playerFace">🙂</span><span class="hat" id="playerHat"></span><span class="say" id="speech"></span></div>
     <div class="visitor" id="visitor">👨‍💼<span class="say say-visitor" id="visitorSay"></span></div>
     <div class="colleague" id="colleague"><span class="face" id="colleagueFace">🧑‍💻</span><span class="say say-colleague" id="colleagueSay"></span></div>
 
@@ -804,6 +830,7 @@ body{
       </div>
     </div>
 
+    <div class="heatmask"></div>
     <div class="darkmask"></div>
     <div class="chips" id="chips"></div>
     <div class="toasts" id="toasts"></div>
@@ -910,7 +937,7 @@ function resetState(){
     rad:'low', radLeft:rand(35,60),
     vent:false,
     effects:[],
-    hat:false,
+    hat:false, overheat:0, overheatStage:0,
     paused:false, over:null,
     walk:null,
     col:{ target:36, walking:false, flip:false, timer:rand(20,34), mood:'pass' },
@@ -1097,7 +1124,8 @@ function render(){
   if(getEff('heater')) chips.push(['🔥 Обогреватель', 'warm']);
   if(getEff('meeting')) chips.push(['📋 Совещание', 'bad']);
   if(getEff('reception')) chips.push(['🚪 Ресепшен у двери', 'bad']);
-  if(S.hat) chips.push(['🧣 Шапка: −22% потерь', 'good']);
+  if(S.hat) chips.push(['🧣 Шапка −22% · перегрев '+Math.round(S.overheat)+'%',
+                        S.overheat >= 70 ? 'bad' : (S.overheat >= 45 ? 'warm' : 'good')]);
   if(dark) chips.push(['🕯 Света нет', 'bad']);
   if(S.heaterOn) chips.push(['💸 '+money(S.fineRate)+'/мин · счёт '+money(S.fine), 'warm']);
   else if(S.fine > 0) chips.push(['💸 Штраф: '+money(S.fine), 'bad']);
@@ -1112,6 +1140,9 @@ function render(){
   }
 
   el.btnHat.classList.toggle('on', S.hat);
+  el.player.classList.toggle('wearing', !!S.hat);
+  el.scene.classList.toggle('hatted', !!S.hat);
+  el.scene.classList.toggle('dizzy', S.overheat >= 70);
   el.btnKnock.disabled = S.rad !== 'bubble';
   el.btnKnock.classList.toggle('on', S.rad === 'bubble');
   el.btns.forEach(function(b){
@@ -1226,6 +1257,26 @@ function step(dtMs){
   S.stat.minWarmth = Math.min(S.stat.minWarmth, S.warmth);
   S.stat.maxWarmth = Math.max(S.stat.maxWarmth, S.warmth);
   if(S.hat) S.stat.hatMin += dmin;
+
+  // перегрев: в шапке тепло копится, без шапки остывает
+  if(S.hat) S.overheat += (0.55 + Math.max(0, S.warmth - 40) / 60 * 1.5 + (S.walk ? 0.15 : 0)) * dmin;
+  else      S.overheat -= 3.0 * dmin;
+  S.overheat = clamp(S.overheat, 0, 100);
+  S.stat.maxOverheat = Math.max(S.stat.maxOverheat || 0, S.overheat);
+  if(S.overheat >= 100){ endGame('overheat'); return; }
+  if(S.overheat >= 88 && S.overheatStage < 4){
+    S.overheatStage = 4;
+    speech('😵 В глазах темнеет… шапку, срочно');
+    vib([20,40,20]);
+  } else if(S.overheat >= 70 && S.overheatStage < 3){
+    S.overheatStage = 3;
+    speech('🥵 Голова кружится. Это шапка');
+    toast('🥵 Перегрев: сними шапку','bad');
+  } else if(S.overheat >= 45 && S.overheatStage < 2){
+    S.overheatStage = 2;
+    speech('🔥 В шапке жарко, но потери меньше');
+  }
+  if(S.overheat < 30 && S.overheatStage > 0) S.overheatStage = 0;
 
   if(S.t >= S.nextAmbientAt){
     speech(pick(AMBIENT));
@@ -1371,10 +1422,10 @@ function toggleHat(){
   vib(12);
   if(S.hat){
     S.warmth = clamp(S.warmth+2,0,100);
-    speech('Шапка надета: потери −22%. Теперь можно жить');
+    speech('Шапка надета: потери −22%. Только не запарься');
     if(Math.random() < 0.3){ S.stat.awkward++; colleagueSay('«Это вообще рабочий день?»'); }
   } else {
-    speech('Шапка снята. Солидно, но холодно');
+    speech('Шапка снята. Голова остывает');
   }
   if(!S.paused) render();
 }
@@ -1891,6 +1942,8 @@ function finishWalk(){
 
 /* ============================ ФИНАЛ ============================ */
 var TITLES = [
+  { test:function(s){ return s.over==='overheat'; },
+    title:'Перегрелся', quote:'Шапка была тёплая, а голова — горячая. Помощь приехала быстрее, чем отопление.' },
   { test:function(s){ return S.fine >= 120000; },
     title:'Расточитель МТО', quote:'Обошёлся отделу дороже, чем весь отопительный сезон. Зато не мёрз.' },
   { test:function(s){ return s.over==='done' && s.stat.minWarmth<12; },
@@ -1903,7 +1956,7 @@ var TITLES = [
     title:'Мастер по стравливанию пробок', quote:'Я стучу по батарее так, что тепло идёт. Иногда даже по назначению.' },
   { test:function(s){ return s.stat.ventFixes>=3; },
     title:'Гроза форточек', quote:'Каждую форточку в этом здании я закрывал лично. Дважды.' },
-  { test:function(s){ return s.stat.hatMin > (CFG.DAY_END-CFG.DAY_START)*0.65; },
+  { test:function(s){ return s.stat.hatMin > (CFG.DAY_END-CFG.DAY_START)*0.45; },
     title:'Человек-ёжик', quote:'Шапку снял один раз — на совещании. И то жалею.' },
   { test:function(s){ return s.over==='frozen'; },
     title:'Полярник-стажёр', quote:'Замёрз, но заявку в эксплуатацию оставил. Это ли не победа?' },
@@ -1926,9 +1979,11 @@ function endGame(reason){
   var survived = reason === 'done';
   var st = S.stat;
   el.card.innerHTML =
-    '<div class="result-emoji">'+(survived?'🏁':'🥶')+'</div>'+
+    '<div class="result-emoji">'+(survived ? '🏁' : (reason === 'overheat' ? '🥵' : '🥶'))+'</div>'+
     '<h2 class="title-big">'+r.title+'</h2>'+
-    '<div class="subtitle">'+(survived ? 'дожил до 18:00' : 'замёрз в '+fmtTime(S.t)+' · продержался '+fmtDur(S.t))+'</div>'+
+    '<div class="subtitle">'+(survived ? 'дожил до 18:00'
+        : (reason === 'overheat' ? 'перегрелся в '+fmtTime(S.t)+' · продержался '+fmtDur(S.t)
+                                 : 'замёрз в '+fmtTime(S.t)+' · продержался '+fmtDur(S.t)))+'</div>'+
     '<div class="stats">'+
       cell('☕','стаканов чая',st.tea)+
       cell('🎯','моментов поймано',st.timingHits)+
@@ -1940,6 +1995,8 @@ function endGame(reason){
       cell('💥','обесточек ЦАД',st.blackouts)+
       cell('🌡','пик в кабинете',Math.round(st.maxRoomT)+'°')+
       cell('💨','воздух падал до',Math.round(st.minO2)+'%')+
+      cell('🧣','минут в шапке',Math.round(st.hatMin))+
+      cell('🔥','перегрев до',Math.round(st.maxOverheat || 0)+'%')+
     '</div>'+
     '<div class="quote" id="quoteBox">«'+r.quote+'»</div>'+
     '<div class="share-row">'+
@@ -2068,7 +2125,6 @@ function start(){
   pickRadiator('low');
   S.radLeft = rand(35,55);
   speech('Рабочий день. Посмотрим, что с отоплением');
-  speech('Рабочий день. Посмотрим, что с отоплением');
   S.lastReal = 0;
   render();
 }
@@ -2082,7 +2138,7 @@ function showHelp(fromStart){
     '<p>Дожить с 9:00 до 18:00 и не замёрзнуть. В конце — титул, цитата и карточка для чата.</p>'+
     '<div class="rulegrid">'+
       ruleTile('☕','Грелки','Чай, приседы и дыхание на руки. У каждой своя перезарядка.')+
-      ruleTile('🧣','Шапка','Потери тепла −22 %. Коллегам может не понравиться.')+
+      ruleTile('🧣','Шапка','Потери тепла −22 %. Но в шапке копится перегрев: пересидишь — «Перегрелся».')+
       ruleTile('🫧','Пробка','Батарея шумит — жми 🔨 и попади в зелёную зону.')+
       ruleTile('🪟','Форточка','Коллега открывает, ты закрываешь: тап по окну.')+
       ruleTile('🎯','Тайминг','В спорных событиях решает момент нажатия.')+
